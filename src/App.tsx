@@ -370,12 +370,12 @@ const LTAutoOSWorkspace: React.FC = () => {
               )}
               {activeTab === 'CALENDAR' && (
                 <WorkshopCalendarModule
-                  onOpenStopwatch={() => setActiveTab('ORDERS')}
-                  onOpenQuote={() => setActiveTab('QUOTE')}
+                  onOpenOrderInBay={() => setActiveTab('ORDERS')}
+                  onJumpToNewQuote={() => setActiveTab('QUOTE')}
                 />
               )}
               {activeTab === 'ORDERS' && (
-                <WorkOrdersStopwatchModule onOpenCheckout={handleOpenCheckoutFromOrder} />
+                <WorkOrdersStopwatchModule onOpenPaymentCheckout={handleOpenCheckoutFromOrder} />
               )}
               {activeTab === 'CRM' && <CrmRevenueRadarModule />}
               {activeTab === 'PAYMENTS' && <PaymentsHubModule />}

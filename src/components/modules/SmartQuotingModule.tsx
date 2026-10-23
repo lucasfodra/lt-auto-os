@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  AlertTriangle,
   BookOpen,
   CalendarCheck,
   Check,
@@ -108,7 +107,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   onOrderCreated,
   onOpenSettings,
 }) => {
-  const { db, uiLang, docLang, setDocLang, createWorkOrderFromQuote } = useApp();
+  const { db, uiLang, docLang, setDocLang, addWorkOrder, upsertCustomerAndVehicle } = useApp();
   const isPt = uiLang === 'PT-BR';
 
   // Vehicle & Customer State
@@ -311,8 +310,8 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   );
 
   const selectedModifiers = useMemo(
-    () => db.complexityModifiers.filter((m) => selectedModifierIds.includes(m.id)),
-    [db.complexityModifiers, selectedModifierIds]
+    () => db.modifiersCatalog.filter((m) => selectedModifierIds.includes(m.id)),
+    [db.modifiersCatalog, selectedModifierIds]
   );
 
   const breakdown = useMemo(
@@ -321,12 +320,11 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
         selectedServices,
         selectedModifiers,
         applyComboDiscount,
-        applyDiagnosticDiscount,
-        partsMode: 'CUSTOMER_SUPPLIES',
-        partsCostGbp: 0,
-        partsMarkupPercent: 0,
+        applyDiagnosticRepairDiscount: applyDiagnosticDiscount,
+        partsSourcingMode: 'CUSTOMER_SUPPLIES',
+        dropOffSlot,
       }),
-    [selectedServices, selectedModifiers, applyComboDiscount, applyDiagnosticDiscount]
+    [selectedServices, selectedModifiers, applyComboDiscount, applyDiagnosticDiscount, dropOffSlot]
   );
 
   const promisedCustomerMinutes = useMemo(() => {
@@ -334,9 +332,9 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
       (acc, s) => acc + (s.customerBufferMinutes || 15),
       0
     );
-    const total = breakdown.estimatedTotalMinutes + Math.min(rawBuffer, 60);
+    const total = breakdown.totalEstimatedMinutes + Math.min(rawBuffer, 60);
     return Math.ceil(total / 15) * 15;
-  }, [selectedServices, breakdown.estimatedTotalMinutes]);
+  }, [selectedServices, breakdown.totalEstimatedMinutes]);
 
   const promisedReadyTime = useMemo(
     () => addMinutesToTimeSlot(dropOffSlot, promisedCustomerMinutes),
@@ -344,44 +342,18 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   );
 
   const whatsappMessage = useMemo(() => {
-    const baseMsg = generateWhatsAppQuoteText({
-      docLang,
+    return generateWhatsAppQuoteText({
+      outputLanguage: docLang,
       customerName: customerName || (docLang === 'PT-BR' ? 'Cliente' : 'Customer'),
       vrm,
-      make,
-      model,
-      year,
-      engine,
-      oilSpec,
+      vehicleLabel: `${year} ${make} ${model} (${engine})`,
       selectedServices,
       selectedModifiers,
-      breakdown,
-      partsMode: 'CUSTOMER_SUPPLIES',
+      calculation: breakdown,
+      scheduledDate,
+      partsSourcingMode: 'CUSTOMER_SUPPLIES',
+      oilSpec,
     });
-
-    const partsChecklist = selectedServices
-      .map((s) =>
-        docLang === 'PT-BR' ? s.partsCustomerShouldBringPt : s.partsCustomerShouldBringEn
-      )
-      .filter(Boolean);
-
-    const scheduleBlockPt = `\n📅 *Agendamento & Prazo de Entrega:*\n• Data: *${scheduledDate}* | Deixar às: *${dropOffSlot}*\n• Previsão de Carro Pronto: *~${promisedReadyTime}* (${promisedCustomerMinutes} min)\n${
-      partsChecklist.length > 0
-        ? `\n📦 *Peças para Você Trazer (Euro Car Parts / Autodoc):*\n${partsChecklist
-            .map((p) => `  • ${p}`)
-            .join('\n')}`
-        : ''
-    }`;
-
-    const scheduleBlockEn = `\n📅 *Booking & Promised Collection Time:*\n• Date: *${scheduledDate}* | Drop-off: *${dropOffSlot}*\n• Estimated Ready Time: *~${promisedReadyTime}* (${promisedCustomerMinutes} mins)\n${
-      partsChecklist.length > 0
-        ? `\n📦 *Parts For Customer To Supply (Euro Car Parts / Autodoc):*\n${partsChecklist
-            .map((p) => `  • ${p}`)
-            .join('\n')}`
-        : ''
-    }`;
-
-    return `${baseMsg}\n${docLang === 'PT-BR' ? scheduleBlockPt : scheduleBlockEn}`;
   }, [
     docLang,
     customerName,
@@ -395,9 +367,6 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     selectedModifiers,
     breakdown,
     scheduledDate,
-    dropOffSlot,
-    promisedReadyTime,
-    promisedCustomerMinutes,
   ]);
 
   const handleCopyWhatsApp = async () => {
@@ -414,29 +383,82 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
 
   const handleCreateWorkOrder = () => {
     if (selectedServices.length === 0) return;
-    const wo = createWorkOrderFromQuote({
+
+    const normalized = vrm.replace(/\s+/g, '').toUpperCase();
+    const existingVeh = db.vehicles.find(
+      (v) => v.vrm.replace(/\s+/g, '').toUpperCase() === normalized
+    );
+
+    const customerId = existingVeh?.customerId || `cust-${Date.now()}`;
+    const vehicleId = existingVeh?.id || `veh-${Date.now()}`;
+
+    if (!existingVeh) {
+      upsertCustomerAndVehicle(
+        {
+          id: customerId,
+          name: customerName || 'Walk-in Customer',
+          phone: customerPhone || '+447700000000',
+          preferredLanguage: docLang,
+          driverProfile: 'private',
+        },
+        {
+          id: vehicleId,
+          vrm,
+          make,
+          model,
+          year,
+          engine,
+          fuelType,
+          mileage,
+          oilSpec,
+          flags,
+          motExpiryDate: dvsaReport?.motTests?.[0]?.expiryDate || '2027-03-15',
+          nextServiceDueDate: '2027-04-15',
+          customerId,
+          history: [],
+        }
+      );
+    }
+
+    const wo = addWorkOrder({
+      status: 'Booked',
+      vehicleId,
+      customerId,
       vrm,
-      make,
-      model,
-      year,
-      engine,
-      fuelType,
-      oilSpec,
-      mileage,
+      vehicleLabel: `${year} ${make} ${model} (${engine})`,
       customerName: customerName || 'Walk-in Customer',
       customerPhone: customerPhone || '+447700000000',
-      preferredLanguage: docLang,
-      flags,
-      serviceIds: selectedServiceIds,
-      modifierIds: selectedModifierIds,
-      applyComboDiscount,
-      applyDiagnosticDiscount,
-      partsMode: 'CUSTOMER_SUPPLIES',
-      partsCostGbp: 0,
-      partsMarkupPercent: 0,
+      customerLanguage: docLang,
+      selectedServiceIds,
+      selectedModifierIds,
+      comboDiscountApplied: breakdown.comboDiscountGbp > 0,
+      comboDiscountGbp: breakdown.comboDiscountGbp,
+      diagnosticDiscountApplied: breakdown.diagnosticDiscountGbp > 0,
+      partsSourcingMode: 'CUSTOMER_SUPPLIES',
+      parts: [],
+      labourTotalGbp: breakdown.labourTotalGbp,
+      partsCostTotalGbp: 0,
+      partsClientTotalGbp: 0,
+      grossTotalGbp: breakdown.grossTotalGbp,
+      netProfitGbp: breakdown.netProfitGbp,
+      estimatedMinutes: breakdown.totalEstimatedMinutes,
+      customerPromisedMinutes: promisedCustomerMinutes,
+      actualSecondsSpent: 0,
+      timerRunning: false,
       scheduledDate,
-      scheduledTimeSlot: dropOffSlot,
+      dropOffSlot,
       promisedReadyTime,
+      checklist: {
+        torqueWheelNuts: false,
+        pumpBrakePedal: false,
+        resetServiceLight: false,
+        checkFluidLevels: false,
+        attachHealthReport: false,
+      },
+      dtcFaults: [],
+      advisoryNotes: '',
+      oilSpecUsed: oilSpec,
+      recordedMileage: mileage,
     });
 
     setOrderCreatedBanner(
@@ -454,7 +476,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     () =>
       db.workOrders
         .filter((w) => w.scheduledDate === scheduledDate && w.status !== 'Paid')
-        .map((w) => w.scheduledTimeSlot),
+        .map((w) => w.dropOffSlot),
     [db.workOrders, scheduledDate]
   );
 
@@ -878,7 +900,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {db.complexityModifiers.map((mod) => {
+              {db.modifiersCatalog.map((mod) => {
                 const active = selectedModifierIds.includes(mod.id);
                 return (
                   <button
@@ -896,7 +918,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                         {isPt ? mod.namePt : mod.nameEn}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
-                        +{mod.addedMinutes} min box
+                        +{mod.extraMinutes} min box
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold text-xs shrink-0">
@@ -917,7 +939,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                     : 'bg-slate-950/60 border-white/[0.06] text-slate-400'
                 }`}
               >
-                <span className="text-xs font-bold">{t('comboDiscountLabel', uiLang)}</span>
+                <span className="text-xs font-bold">{t(uiLang, 'comboAvailable')}</span>
                 <span className="font-mono font-black text-xs text-emerald-400">-£5.00</span>
               </button>
 
@@ -930,7 +952,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                     : 'bg-slate-950/60 border-white/[0.06] text-slate-400'
                 }`}
               >
-                <span className="text-xs font-bold">{t('diagDiscountLabel', uiLang)}</span>
+                <span className="text-xs font-bold">{t(uiLang, 'diagRuleAvailable')}</span>
                 <span className="font-mono font-black text-xs text-emerald-400">-£10.00</span>
               </button>
             </div>
@@ -990,7 +1012,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                   {isPt ? 'Tempo Box' : 'Bay Time'}
                 </span>
                 <span className="text-sm font-mono font-black text-amber-400">
-                  ~{breakdown.estimatedTotalMinutes}m
+                  ~{breakdown.totalEstimatedMinutes}m
                 </span>
               </div>
               <div className="border-x border-white/[0.07]">
@@ -1028,7 +1050,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                     EuroCarParts <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                   <a
-                    href={buildAutodocUkUrl(make, model)}
+                    href={buildAutodocUkUrl(make, model, engine)}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[10px] font-bold text-amber-400 hover:underline flex items-center gap-0.5"
@@ -1099,7 +1121,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                   {isPt ? 'Total Mão de Obra' : 'Total Labour'}
                 </span>
                 <span className="text-3xl font-mono font-black text-white leading-none">
-                  £{breakdown.netLabourProfitGbp.toFixed(2)}
+                  £{breakdown.labourTotalGbp.toFixed(2)}
                 </span>
               </div>
             </div>
@@ -1126,7 +1148,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                   {copiedToast ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      {t('copiedToast', uiLang)}
+                      {isPt ? 'Copiado!' : 'Copied!'}
                     </>
                   ) : (
                     <>
