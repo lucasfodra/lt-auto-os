@@ -8,6 +8,7 @@ import {
   Copy,
   ExternalLink,
   Gauge,
+  KeyRound,
   PackageCheck,
   Search,
   Send,
@@ -43,6 +44,7 @@ import { t } from '../../i18n/translations';
 
 interface SmartQuotingModuleProps {
   onNavigateToOrders: () => void;
+  onNavigateToSettings?: () => void;
 }
 
 const DROP_OFF_SLOTS = [
@@ -65,22 +67,22 @@ const COMPLEXITY_BADGE_STYLES: Record<
   { labelPt: string; labelEn: string; classes: string }
 > = {
   EASY: {
-    labelPt: 'FÁCIL / RÁPIDO',
-    labelEn: 'EASY / FAST',
+    labelPt: 'FÁCIL',
+    labelEn: 'EASY',
     classes: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
   },
   MEDIUM: {
-    labelPt: 'MÉDIO / PADRÃO',
-    labelEn: 'MEDIUM / STD',
+    labelPt: 'MÉDIO',
+    labelEn: 'MEDIUM',
     classes: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
   },
   HARD: {
-    labelPt: 'PESADO / FERRUGEM',
-    labelEn: 'HEAVY / HARD',
+    labelPt: 'PESADO',
+    labelEn: 'HARD',
     classes: 'bg-red-500/20 text-red-300 border-red-500/40',
   },
   EXTREME: {
-    labelPt: 'ALTA COMPLEXIDADE',
+    labelPt: 'EXTREMO',
     labelEn: 'EXTREME',
     classes: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
   },
@@ -88,6 +90,7 @@ const COMPLEXITY_BADGE_STYLES: Record<
 
 export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   onNavigateToOrders,
+  onNavigateToSettings,
 }) => {
   const { db, uiLang, docLang, setDocLang, addWorkOrder } = useApp();
   const isPt = uiLang === 'PT-BR';
@@ -104,7 +107,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   const [customerName, setCustomerName] = useState('Matheus Oliveira');
   const [customerPhone, setCustomerPhone] = useState('+447700900412');
 
-  // Active Technical Spec from Scottish/UK Database + DVSA MOT API Report
+  // Active Technical Spec + DVSA MOT Report
   const [activeTechSpec, setActiveTechSpec] = useState<UkVehicleTechnicalSpec | null>(
     UK_VEHICLE_SPECS_DB[0]
   );
@@ -146,10 +149,10 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     [ukDbSearchQuery]
   );
 
-  const categoriesList = useMemo(() => {
-    const unique = Array.from(new Set(db.serviceCatalog.map((s) => s.category)));
-    return unique;
-  }, [db.serviceCatalog]);
+  const categoriesList = useMemo(
+    () => Array.from(new Set(db.serviceCatalog.map((s) => s.category))),
+    [db.serviceCatalog]
+  );
 
   const filteredServiceCatalog = useMemo(() => {
     return db.serviceCatalog.filter((srv) => {
@@ -166,7 +169,6 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     });
   }, [db.serviceCatalog, selectedCategory, serviceSearchQuery]);
 
-  // Apply a vehicle spec from the Scottish/UK Common Cars Database
   const handleSelectUkTechSpec = (spec: UkVehicleTechnicalSpec) => {
     setActiveTechSpec(spec);
     setMake(spec.make);
@@ -177,9 +179,7 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     setFlags(spec.flags);
 
     const decoded = decodeUkPlateYear(vrm);
-    if (decoded.year) {
-      setYear(decoded.year);
-    }
+    if (decoded.year) setYear(decoded.year);
 
     const currentServices = db.serviceCatalog.filter((s) =>
       selectedServiceIds.includes(s.id)
@@ -189,7 +189,6 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     setShowUkDatabaseDrawer(false);
   };
 
-  // Lookup VRM via DVSA MOT History API + Local LT Auto Fleet + Scottish Tech Spec DB
   const handleLookupVrm = async (targetVrm = vrm) => {
     setLoadingDvsa(true);
     const normalized = targetVrm.replace(/\s+/g, '').toUpperCase();
@@ -419,415 +418,252 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      {/* Left 7 Cols: UK VRM Plate Lookup, Scottish Vehicle Technical Database & 31-Service Labour Menu */}
-      <div className="lg:col-span-7 space-y-6">
-        {/* Step 1: UK VRM Plate Lookup & Scottish Vehicle Technical Spec Database */}
-        <section className="bg-[#161F30] border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                1. {t(uiLang, 'quickLookupVrm')} &amp; UK Car Database
-              </span>
-              <h2 className="text-lg font-extrabold text-white">
-                {isPt
-                  ? 'Placa UK + Banco Técnico dos Carros da Escócia'
-                  : 'UK VRM Lookup + Scottish Common Vehicles Technical Database'}
-              </h2>
-            </div>
+    <div className="space-y-5">
+      {/* ====================================================================
+          TOP BAR: UK PLATE INPUT + DVSA LOOKUP + QUICK VEHICLE SPECS BAR
+         ==================================================================== */}
+      <section className="bg-[#161F30] border border-slate-800 rounded-xl p-4 shadow-lg space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <UkPlateBadge vrm={vrm} size="md" editable onChange={setVrm} />
 
-            {/* Quick Seed Fleet VRM Pills */}
-            <div className="flex flex-wrap gap-1.5">
-              {db.vehicles.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => handleLookupVrm(v.vrm)}
-                  className={`px-2.5 py-1.5 rounded text-xs font-mono font-bold border transition ${
-                    v.vrm === vrm
-                      ? 'bg-amber-500 text-slate-950 border-amber-400'
-                      : 'bg-slate-900/90 text-amber-300 border-slate-700 hover:border-amber-500'
-                  }`}
-                >
-                  {v.vrm}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
-            <UkPlateBadge vrm={vrm} size="lg" editable onChange={setVrm} />
             <button
               type="button"
               onClick={() => void handleLookupVrm(vrm)}
               disabled={loadingDvsa}
-              className="min-h-[52px] px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-lg flex items-center justify-center gap-2 shadow transition text-sm"
+              className="h-11 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg flex items-center gap-2 text-xs sm:text-sm shadow transition"
             >
               <Zap className="w-4 h-4" />
               {loadingDvsa
-                ? 'Consultando DVSA...'
+                ? 'Buscando...'
                 : isPt
-                ? 'Consultar Placa (DVSA MOT)'
-                : 'Lookup VRM (DVSA MOT)'}
+                ? 'Buscar Placa (DVSA)'
+                : 'Lookup VRM (DVSA)'}
             </button>
 
             <button
               type="button"
               onClick={() => setShowUkDatabaseDrawer((v) => !v)}
-              className="min-h-[52px] flex-1 px-4 bg-slate-900 hover:bg-slate-800 border-2 border-amber-500/70 text-amber-300 font-extrabold rounded-lg flex items-center justify-center gap-2 text-xs sm:text-sm transition"
+              className="h-11 px-3.5 bg-slate-900 hover:bg-slate-800 border border-amber-500/60 text-amber-300 font-bold rounded-lg flex items-center gap-2 text-xs transition"
             >
-              <BookOpen className="w-5 h-5 text-amber-400 shrink-0" />
+              <BookOpen className="w-4 h-4 text-amber-400" />
               {isPt
-                ? `Banco de Carros da Escócia (${UK_VEHICLE_SPECS_DB.length} Modelos)`
-                : `Scottish / UK Car Specs DB (${UK_VEHICLE_SPECS_DB.length} Models)`}
+                ? `Escolher Carro Manual (${UK_VEHICLE_SPECS_DB.length} Modelos)`
+                : `Select UK Car Model (${UK_VEHICLE_SPECS_DB.length})`}
             </button>
           </div>
 
-          {/* DVSA Trade MOT History API Live Result & 1-Click Quote Advisories Banner */}
-          {dvsaReport && dvsaReport.motTests && dvsaReport.motTests[0] && (
-            <div className="mb-4 bg-emerald-950/30 border-2 border-emerald-500/60 rounded-xl p-4 space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono text-[10px] font-black uppercase">
-                    DVSA MOT API
-                  </span>
-                  <span className="text-xs font-extrabold text-white">
-                    {dvsaReport.make} {dvsaReport.model} ({dvsaReport.engineSize}cc •{' '}
-                    {dvsaReport.primaryColour})
-                  </span>
-                </div>
-                <span className="text-xs font-mono text-emerald-300">
-                  MOT Exp: <strong>{dvsaReport.motTests[0].expiryDate || 'N/A'}</strong> • Odo:{' '}
-                  <strong>
-                    {Number(dvsaReport.motTests[0].odometerValue).toLocaleString()}{' '}
-                    {dvsaReport.motTests[0].odometerUnit}
-                  </strong>
-                </span>
-              </div>
+          {/* Seed Plates + API Key Shortcut */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {db.vehicles.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => void handleLookupVrm(v.vrm)}
+                className={`px-2 py-1 rounded text-[11px] font-mono font-bold border transition ${
+                  v.vrm === vrm
+                    ? 'bg-amber-500 text-slate-950 border-amber-400'
+                    : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-500'
+                }`}
+              >
+                {v.vrm}
+              </button>
+            ))}
 
-              {dvsaReport.motTests[0].defects && dvsaReport.motTests[0].defects.length > 0 && (
-                <div className="space-y-1.5 pt-1 border-t border-emerald-500/30">
-                  <span className="text-[11px] font-bold uppercase text-amber-300 block">
-                    🔍 Advisories / Falhas Registradas no Último MOT da Placa {dvsaReport.registration}:
-                  </span>
-                  {dvsaReport.motTests[0].defects.map((def, idx) => (
-                    <div
-                      key={idx}
-                      className="text-xs bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2"
-                    >
-                      <span className="text-slate-200">
-                        <strong
-                          className={
-                            def.type === 'ADVISORY' ? 'text-amber-400' : 'text-red-400'
-                          }
-                        >
-                          [{def.type}]
-                        </strong>{' '}
-                        {def.text}
-                      </span>
-                    </div>
-                  ))}
-
-                  {dvsaReport.recommendedServiceIds.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedServiceIds((prev) =>
-                          Array.from(new Set([...prev, ...dvsaReport.recommendedServiceIds]))
-                        );
-                      }}
-                      className="mt-2 w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      {isPt
-                        ? `Orçar Reparo desses Advisories do MOT em 1 Clique (+${dvsaReport.recommendedServiceIds.length} serviços)`
-                        : `Add Recommended MOT Advisory Repairs in 1-Click (+${dvsaReport.recommendedServiceIds.length} jobs)`}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Interactive Scottish / UK Vehicle Technical Database Browser */}
-          {showUkDatabaseDrawer && (
-            <div className="mb-5 bg-slate-950 border-2 border-amber-500/60 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-amber-400">
-                  🏴󠁧󠁢󠁳󠁣󠁴󠁿{' '}
-                  {isPt
-                    ? 'Selecione o Carro/Motor (Preenche Óleo OEM, Litros, Torques e Complexidade Automaticamente)'
-                    : 'Select UK Vehicle Spec (Auto-fills OEM Oil, Capacity, Torques & Complexity Flags)'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowUkDatabaseDrawer(false)}
-                  className="text-xs text-slate-400 hover:text-white underline"
-                >
-                  {isPt ? 'Fechar' : 'Close'}
-                </button>
-              </div>
-
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  value={ukDbSearchQuery}
-                  onChange={(e) => setUkDbSearchQuery(e.target.value)}
-                  placeholder={
-                    isPt
-                      ? 'Buscar carro/motor na Escócia (ex: Fiesta EcoBoost, Corsa 1.4, Golf TDI, Prius Uber, PureTech, BMW 320d)...'
-                      : 'Search UK car/engine (e.g. Fiesta EcoBoost, Corsa 1.4, Golf TDI, Prius Hybrid, PureTech, BMW 320d)...'
-                  }
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
-                {filteredUkDatabase.map((spec) => (
-                  <button
-                    key={spec.id}
-                    type="button"
-                    onClick={() => handleSelectUkTechSpec(spec)}
-                    className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
-                      activeTechSpec?.id === spec.id
-                        ? 'bg-amber-500/20 border-amber-400'
-                        : 'bg-slate-900/90 border-slate-800 hover:border-amber-500/50'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-black text-white">
-                          {spec.make} {spec.model}
-                        </span>
-                        <span className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-amber-300">
-                          {spec.yearsRange}
-                        </span>
-                      </div>
-                      <div className="text-xs font-bold text-amber-400 mt-0.5">
-                        {spec.engineLabel}
-                      </div>
-                    </div>
-                    <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-300">
-                      <span>
-                        🛢️ {spec.oilViscosity} ({spec.oilCapacityLitres}L)
-                      </span>
-                      <span>🔩 Roda: {spec.wheelNutTorqueNm}Nm</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Active Vehicle Technical Data Sheet Banner */}
-          {activeTechSpec && (
-            <div className="mb-4 bg-slate-950/90 border border-amber-500/40 rounded-xl p-3.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                  <Gauge className="w-4 h-4" />
-                  {isPt ? 'Ficha Técnica de Bancada UK:' : 'UK Workshop Technical Spec Sheet:'}{' '}
-                  <strong className="text-white">
-                    {activeTechSpec.make} {activeTechSpec.model} — {activeTechSpec.engineCode}
-                  </strong>
-                </span>
-                <a
-                  href={buildGovUkMotHistoryUrl(vrm)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-mono font-bold text-emerald-400 hover:underline flex items-center gap-1"
-                >
-                  GOV.UK MOT History ({vrm}) <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                <div className="bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Óleo &amp; Norma OEM</span>
-                  <span className="text-amber-300 font-bold">{activeTechSpec.oilViscosity}</span>
-                </div>
-                <div className="bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Capacidade Cárter</span>
-                  <span className="text-emerald-400 font-bold">
-                    {activeTechSpec.oilCapacityLitres} Litros
-                  </span>
-                </div>
-                <div className="bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Torque Bujão (Sump)</span>
-                  <span className="text-white font-bold">{activeTechSpec.sumpPlugTorqueNm} Nm</span>
-                </div>
-                <div className="bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Torque Roda (Wheel)</span>
-                  <span className="text-white font-bold">{activeTechSpec.wheelNutTorqueNm} Nm</span>
-                </div>
-              </div>
-
-              <p className="text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 leading-relaxed">
-                ⚠️ <strong>{isPt ? 'Dica de Box:' : 'Mechanic Note:'}</strong>{' '}
-                {isPt ? activeTechSpec.mechanicNotesPt : activeTechSpec.mechanicNotesEn}
-              </p>
-            </div>
-          )}
-
-          {/* Vehicle Details Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">Make / Marca</label>
-              <input
-                value={make}
-                onChange={(e) => setMake(e.target.value)}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-semibold"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">Model / Modelo</label>
-              <input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-semibold"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">Engine / Motor</label>
-              <input
-                value={engine}
-                onChange={(e) => setEngine(e.target.value)}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-semibold"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">Oil Spec + Litros</label>
-              <input
-                value={oilSpec}
-                onChange={(e) => setOilSpec(e.target.value)}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-amber-300 font-mono"
-              />
-            </div>
+            {onNavigateToSettings && (
+              <button
+                type="button"
+                onClick={onNavigateToSettings}
+                className="ml-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-[11px] font-bold flex items-center gap-1"
+              >
+                <KeyRound className="w-3 h-3" /> Config API DVSA
+              </button>
+            )}
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">
-                {isPt ? 'Nome do Cliente' : 'Customer Name'}
-              </label>
-              <input
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">WhatsApp (+44)</label>
-              <input
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 font-semibold">Mileage (Milhas)</label>
-              <input
-                type="number"
-                value={mileage}
-                onChange={(e) => setMileage(Number(e.target.value))}
-                className="w-full mt-1 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Vehicle Technical Risk Flags */}
-          <div className="pt-3 border-t border-slate-800">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2">
-              {isPt
-                ? 'Flags de Complexidade deste Carro (Ajustam Tempo & Preço Automaticamente)'
-                : 'Vehicle Complexity Flags (Auto-Adjust Time & Surcharges)'}
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {[
-                {
-                  key: 'hasEPB' as const,
-                  labelPt: 'Freio Eletrônico (EPB Scanner)',
-                  labelEn: 'Electronic Parking Brake (EPB)',
-                },
-                {
-                  key: 'hasComplexUndertray' as const,
-                  labelPt: 'Protetor de Cárter Pesado',
-                  labelEn: 'Complex Undertray / Shield',
-                },
-                {
-                  key: 'difficultOilFilter' as const,
-                  labelPt: 'Filtro Difícil Acesso',
-                  labelEn: 'Difficult Oil Filter Access',
-                },
-                {
-                  key: 'dieselFilterPriming' as const,
-                  labelPt: 'Diesel (Requer Sangria Launch)',
-                  labelEn: 'Diesel Fuel Priming Required',
-                },
-                {
-                  key: 'scottishRustRisk' as const,
-                  labelPt: 'Risco Ferrugem Sal Escocês',
-                  labelEn: 'Scottish Salt Rust Surcharge Risk',
-                },
-              ].map((item) => {
-                const active = Boolean(flags[item.key]);
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => toggleFlag(item.key)}
-                    className={`min-h-[42px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
-                      active
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                        : 'bg-slate-900/70 border-slate-700 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <AlertTriangle
-                      className={`w-3.5 h-3.5 ${active ? 'text-amber-400' : 'text-slate-500'}`}
-                    />
-                    {isPt ? item.labelPt : item.labelEn}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* Step 2: Encyclopedic Labour-Only Service Catalog (31+ Services with Search & Categories) */}
-        <section className="bg-[#161F30] border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                2.{' '}
+        {/* Drawer to pick any Scottish/UK Car Spec */}
+        {showUkDatabaseDrawer && (
+          <div className="bg-slate-950 border border-amber-500/60 rounded-xl p-3.5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-amber-400">
+                🏴󠁧󠁢󠁳󠁣󠁴󠁿{' '}
                 {isPt
-                  ? `Tabela Completa de Mão de Obra (${db.serviceCatalog.length} Serviços)`
-                  : `Complete Labour-Only Service Menu (${db.serviceCatalog.length} Services)`}
+                  ? 'Clique no carro para carregar Óleo, Litros, Torques e Dicas:'
+                  : 'Select UK Vehicle Spec:'}
               </span>
-              <h2 className="text-lg font-extrabold text-white">
-                {isPt
-                  ? 'Qualquer Trampo: Preço Só do Serviço, Complexidade & Tempo Real'
-                  : 'All Workshop Jobs: Pure Labour Price, Complexity & Bay Time'}
-              </h2>
+              <button
+                type="button"
+                onClick={() => setShowUkDatabaseDrawer(false)}
+                className="text-xs text-slate-400 hover:text-white underline"
+              >
+                {isPt ? 'Fechar' : 'Close'}
+              </button>
             </div>
-            <span className="text-xs font-mono bg-slate-900 px-3 py-1 rounded-full text-amber-400 border border-slate-700">
-              {selectedServiceIds.length} {isPt ? 'selecionados' : 'selected'}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={ukDbSearchQuery}
+                onChange={(e) => setUkDbSearchQuery(e.target.value)}
+                placeholder="Ex: Fiesta EcoBoost, Corsa 1.4, Golf TDI, Prius, PureTech, BMW 320d..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+              {filteredUkDatabase.map((spec) => (
+                <button
+                  key={spec.id}
+                  type="button"
+                  onClick={() => handleSelectUkTechSpec(spec)}
+                  className="p-2.5 rounded-lg border border-slate-800 bg-slate-900/90 hover:border-amber-500 text-left transition"
+                >
+                  <div className="text-xs font-black text-white">
+                    {spec.make} {spec.model}
+                  </div>
+                  <div className="text-[11px] font-bold text-amber-400">{spec.engineLabel}</div>
+                  <div className="text-[10px] font-mono text-slate-400 mt-1">
+                    🛢️ {spec.oilViscosity} ({spec.oilCapacityLitres}L) • 🔩 {spec.wheelNutTorqueNm}Nm
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Compact Vehicle Info + Technical Spec Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 pt-2 border-t border-slate-800/80">
+          <div>
+            <label className="text-[11px] text-slate-400 font-semibold">Carro / Modelo</label>
+            <input
+              value={`${make} ${model}`}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-400 font-semibold">Motor</label>
+            <input
+              value={engine}
+              onChange={(e) => setEngine(e.target.value)}
+              className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-[11px] text-slate-400 font-semibold">
+              Óleo OEM &amp; Capacidade (Litros)
+            </label>
+            <input
+              value={oilSpec}
+              onChange={(e) => setOilSpec(e.target.value)}
+              className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-mono font-bold"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-400 font-semibold">Cliente</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-400 font-semibold">WhatsApp (+44)</label>
+            <input
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
+            />
+          </div>
+        </div>
+
+        {/* One-Line Technical Torques & Note Bar */}
+        {activeTechSpec && (
+          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-3 font-mono">
+              <span className="text-amber-400 font-bold flex items-center gap-1">
+                <Gauge className="w-3.5 h-3.5" />
+                Torques:
+              </span>
+              <span className="text-slate-300">
+                Bujão: <strong className="text-white">{activeTechSpec.sumpPlugTorqueNm} Nm</strong>
+              </span>
+              <span className="text-slate-300">
+                Roda: <strong className="text-white">{activeTechSpec.wheelNutTorqueNm} Nm</strong>
+              </span>
+              <span className="text-emerald-400">
+                Cárter: <strong>{activeTechSpec.oilCapacityLitres}L</strong>
+              </span>
+            </div>
+            <span className="text-amber-200/90 text-[11px] truncate max-w-xl">
+              💡 {isPt ? activeTechSpec.mechanicNotesPt : activeTechSpec.mechanicNotesEn}
             </span>
           </div>
+        )}
 
-          {/* Search & Category Filter Pills */}
-          <div className="space-y-2.5">
+        {/* DVSA Advisories Box (Only when Lookup VRM is clicked) */}
+        {dvsaReport && dvsaReport.motTests?.[0]?.defects && (
+          <div className="bg-emerald-950/30 border border-emerald-500/50 rounded-lg p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-1 text-xs">
+              <div className="font-bold text-emerald-300">
+                🇬🇧 DVSA MOT ({dvsaReport.registration}) — Vence: {dvsaReport.motTests[0].expiryDate}{' '}
+                • {Number(dvsaReport.motTests[0].odometerValue).toLocaleString()} mi
+              </div>
+              {dvsaReport.motTests[0].defects.map((d, i) => (
+                <div key={i} className="text-slate-300 text-[11px]">
+                  • <strong className="text-amber-400">[{d.type}]</strong> {d.text}
+                </div>
+              ))}
+            </div>
+            {dvsaReport.recommendedServiceIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedServiceIds((prev) =>
+                    Array.from(new Set([...prev, ...dvsaReport.recommendedServiceIds]))
+                  )
+                }
+                className="shrink-0 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5"
+              >
+                <Sparkles className="w-4 h-4" />
+                Incluir Reparos do MOT (+{dvsaReport.recommendedServiceIds.length})
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ====================================================================
+          MAIN 2-COLUMN WORKSPACE: SERVICES ON LEFT (7) | SCHEDULE & QUOTE ON RIGHT (5)
+         ==================================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left 7 Cols: Clean Service Picker + Complexity Surcharges */}
+        <div className="lg:col-span-7 space-y-5">
+          <section className="bg-[#161F30] border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-white">
+                {isPt
+                  ? `1. Escolha os Serviços (${db.serviceCatalog.length} opções — Só Mão de Obra)`
+                  : `1. Select Labour Services (${db.serviceCatalog.length} jobs)`}
+              </h2>
+              <span className="text-xs font-mono bg-amber-500 text-slate-950 font-black px-2.5 py-0.5 rounded-full">
+                {selectedServiceIds.length} {isPt ? 'marcados' : 'selected'}
+              </span>
+            </div>
+
+            {/* Search & Category Tabs */}
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={serviceSearchQuery}
                 onChange={(e) => setServiceSearchQuery(e.target.value)}
                 placeholder={
                   isPt
-                    ? 'Pesquisar qualquer serviço (ex: mola, bandeja, bieleta, alternador, cubo, freio, termostática, DPF)...'
-                    : 'Search any job (e.g. wishbone, coil spring, drop links, wheel bearing, alternator, caliper, DPF)...'
+                    ? 'Pesquisar serviço (ex: óleo, pastilha, disco, mola, bieleta, bandeja, alternador)...'
+                    : 'Search service (e.g. oil, pads, discs, spring, drop link, wishbone)...'
                 }
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white"
               />
             </div>
 
@@ -835,20 +671,20 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedCategory('ALL')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
                   selectedCategory === 'ALL'
                     ? 'bg-amber-500 text-slate-950'
                     : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-600'
                 }`}
               >
-                {isPt ? 'Todos' : 'All'} ({db.serviceCatalog.length})
+                Todos ({db.serviceCatalog.length})
               </button>
               {categoriesList.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
                     selectedCategory === cat
                       ? 'bg-amber-500 text-slate-950'
                       : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-600'
@@ -858,34 +694,32 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                 </button>
               ))}
             </div>
-          </div>
 
-          {/* Service Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-1">
-            {filteredServiceCatalog.map((srv) => {
-              const isSelected = selectedServiceIds.includes(srv.id);
-              const tier = srv.complexityTier || 'EASY';
-              const badge = COMPLEXITY_BADGE_STYLES[tier];
-              const totalWithBuffer = srv.estimatedMinutes + (srv.customerBufferMinutes ?? 15);
+            {/* Clean Service Cards List */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[460px] overflow-y-auto pr-1">
+              {filteredServiceCatalog.map((srv) => {
+                const isSelected = selectedServiceIds.includes(srv.id);
+                const tier = srv.complexityTier || 'EASY';
+                const badge = COMPLEXITY_BADGE_STYLES[tier];
+                const totalWithBuffer = srv.estimatedMinutes + (srv.customerBufferMinutes ?? 15);
 
-              return (
-                <button
-                  key={srv.id}
-                  type="button"
-                  onClick={() => toggleService(srv.id)}
-                  className={`p-3.5 rounded-xl border text-left transition flex flex-col justify-between gap-2 ${
-                    isSelected
-                      ? 'bg-amber-500/15 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
-                      : 'bg-slate-900/70 border-slate-800 hover:border-slate-600'
-                  }`}
-                >
-                  <div className="w-full">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-xs sm:text-sm font-bold text-slate-100 leading-snug">
+                return (
+                  <button
+                    key={srv.id}
+                    type="button"
+                    onClick={() => toggleService(srv.id)}
+                    className={`p-3 rounded-xl border text-left transition flex flex-col justify-between gap-2 ${
+                      isSelected
+                        ? 'bg-amber-500/15 border-amber-500 shadow'
+                        : 'bg-slate-900/70 border-slate-800 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 w-full">
+                      <span className="text-xs font-bold text-slate-100 leading-snug">
                         {isPt ? srv.namePt : srv.nameEn}
                       </span>
                       <span
-                        className={`px-2.5 py-0.5 rounded font-mono text-sm font-black shrink-0 ${
+                        className={`px-2 py-0.5 rounded font-mono text-xs font-black shrink-0 ${
                           isSelected
                             ? 'bg-amber-500 text-slate-950'
                             : 'bg-slate-800 text-amber-400'
@@ -895,176 +729,109 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                       </span>
                     </div>
 
-                    {srv.partsCustomerShouldBringPt && (
-                      <p className="text-[11px] text-slate-400 mt-1.5 line-clamp-2">
-                        🛒{' '}
-                        {isPt
-                          ? srv.partsCustomerShouldBringPt
-                          : srv.partsCustomerShouldBringEn}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-[11px] w-full">
-                    <span
-                      className={`px-2 py-0.5 rounded border font-extrabold text-[10px] ${badge.classes}`}
-                    >
-                      {isPt ? badge.labelPt : badge.labelEn}
-                    </span>
-                    <div className="font-mono text-slate-300">
-                      <span>Box: {srv.estimatedMinutes}m</span>
-                      <span className="mx-1 text-slate-600">|</span>
-                      <span className="text-emerald-400 font-bold">
-                        Cliente: ~{totalWithBuffer}m
+                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-800/80 text-[10px] w-full">
+                      <span className={`px-1.5 py-0.5 rounded border font-bold ${badge.classes}`}>
+                        {isPt ? badge.labelPt : badge.labelEn}
+                      </span>
+                      <span className="font-mono text-slate-300">
+                        Box: {srv.estimatedMinutes}m | Cliente:{' '}
+                        <strong className="text-emerald-400">~{totalWithBuffer}m</strong>
                       </span>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Step 3: Complexity Modifiers & Smart Combos */}
-        <section className="bg-[#161F30] border border-slate-800 rounded-xl p-5 shadow-lg">
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-            3. {t(uiLang, 'recommendedModifiers')}
-          </span>
-          <h2 className="text-lg font-extrabold text-white mb-4">
-            {isPt
-              ? 'Adicionais de Dificuldade / Ferrugem & Desconto de Pacote'
-              : 'Complexity Surcharges & Multi-Job Combo Discount'}
-          </h2>
-
-          <div className="space-y-2.5 mb-5">
-            {db.modifiersCatalog.map((mod) => {
-              const active = selectedModifierIds.includes(mod.id);
-              return (
-                <button
-                  key={mod.id}
-                  type="button"
-                  onClick={() => toggleModifier(mod.id)}
-                  className={`w-full min-h-[50px] px-4 py-2.5 rounded-xl border flex items-center justify-between text-left transition ${
-                    active
-                      ? 'bg-red-950/40 border-red-500 text-red-200'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <ShieldAlert
-                      className={`w-4 h-4 shrink-0 ${active ? 'text-red-400' : 'text-slate-500'}`}
-                    />
-                    <span className="text-sm font-semibold">
-                      {isPt ? mod.namePt : mod.nameEn}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 font-mono">
-                    <span className="text-xs text-slate-400">+{mod.extraMinutes}m</span>
-                    <span
-                      className={`text-sm font-extrabold ${
-                        active ? 'text-red-400' : 'text-slate-400'
-                      }`}
-                    >
-                      +£{mod.surchargeGbp.toFixed(2)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 1-Click Combo & Diagnostic Rule Toggles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-800">
-            <button
-              type="button"
-              disabled={!calculation.isComboEligible}
-              onClick={() => setApplyComboDiscount((v) => !v)}
-              className={`min-h-[52px] px-4 py-2.5 rounded-xl border font-bold text-xs sm:text-sm flex items-center justify-between transition ${
-                !calculation.isComboEligible
-                  ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500'
-                  : applyComboDiscount
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-900 border-slate-700 text-slate-300'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-                {t(uiLang, 'comboAvailable')}
-              </span>
-              <span className="font-mono font-extrabold">-£5.00</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={!calculation.isDiagnosticRepairEligible}
-              onClick={() => setApplyDiagnosticDiscount((v) => !v)}
-              className={`min-h-[52px] px-4 py-2.5 rounded-xl border font-bold text-xs sm:text-sm flex items-center justify-between transition ${
-                !calculation.isDiagnosticRepairEligible
-                  ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500'
-                  : applyDiagnosticDiscount
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-900 border-slate-700 text-slate-300'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                {t(uiLang, 'diagRuleAvailable')}
-              </span>
-              <span className="font-mono font-extrabold">-£10.00</span>
-            </button>
-          </div>
-        </section>
-      </div>
-
-      {/* Right 5 Cols: Drop-Off & Ready Time Scheduler + Parts Checklist for Customer + WhatsApp Quote */}
-      <div className="lg:col-span-5 space-y-6">
-        {/* Drop-Off Slot & Turnaround Time Promise Calculator ("Leva tal horário que faço em tanto tempo!") */}
-        <section className="bg-gradient-to-br from-[#161F30] to-[#0F172A] border-2 border-emerald-500/70 rounded-xl p-5 shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                <Clock className="w-4 h-4" />
-                {isPt
-                  ? 'CALCULADORA DE HORÁRIO & ENTREGA AO CLIENTE'
-                  : 'DROP-OFF & COLLECTION PROMISE CALCULATOR'}
-              </span>
-              <h3 className="text-lg font-black text-white mt-0.5">
-                {isPt
-                  ? '"Traz tal horário que te entrego pronto às..."'
-                  : '"Drop off at X, ready for collection at Y"'}
-              </h3>
+                  </button>
+                );
+              })}
             </div>
-            <span
-              className={`px-2.5 py-1 rounded border text-xs font-black ${
-                COMPLEXITY_BADGE_STYLES[calculation.overallComplexity].classes
-              }`}
-            >
-              {isPt
-                ? COMPLEXITY_BADGE_STYLES[calculation.overallComplexity].labelPt
-                : COMPLEXITY_BADGE_STYLES[calculation.overallComplexity].labelEn}
-            </span>
-          </div>
+          </section>
 
-          {/* Date & Drop-off Time Picker Pills */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs text-slate-300 font-bold">
-                📅 {isPt ? 'Data do Agendamento:' : 'Booking Date:'}
-              </label>
+          {/* Compact Complexity Modifiers & Discounts */}
+          <section className="bg-[#161F30] border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
+            <h3 className="text-sm font-black text-white">
+              {isPt
+                ? '2. Adicionais de Dificuldade (Ferrugem / EPB / Protetor) & Descontos'
+                : '2. Complexity Surcharges & Combo Discounts'}
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {db.modifiersCatalog.map((mod) => {
+                const active = selectedModifierIds.includes(mod.id);
+                return (
+                  <button
+                    key={mod.id}
+                    type="button"
+                    onClick={() => toggleModifier(mod.id)}
+                    className={`p-2.5 rounded-lg border flex items-center justify-between text-left text-xs transition ${
+                      active
+                        ? 'bg-red-950/40 border-red-500 text-red-200 font-bold'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className="truncate pr-2">{isPt ? mod.namePt : mod.nameEn}</span>
+                    <span className="font-mono font-black shrink-0 text-red-400">
+                      +£{mod.surchargeGbp} (+{mod.extraMinutes}m)
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={!calculation.isComboEligible}
+                onClick={() => setApplyComboDiscount((v) => !v)}
+                className={`p-2.5 rounded-lg border font-bold text-xs flex items-center justify-between transition ${
+                  !calculation.isComboEligible
+                    ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500'
+                    : applyComboDiscount
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                    : 'bg-slate-900 border-slate-700 text-slate-300'
+                }`}
+              >
+                <span>✨ {t(uiLang, 'comboAvailable')}</span>
+                <span className="font-mono font-black">-£5.00</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={!calculation.isDiagnosticRepairEligible}
+                onClick={() => setApplyDiagnosticDiscount((v) => !v)}
+                className={`p-2.5 rounded-lg border font-bold text-xs flex items-center justify-between transition ${
+                  !calculation.isDiagnosticRepairEligible
+                    ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500'
+                    : applyDiagnosticDiscount
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                    : 'bg-slate-900 border-slate-700 text-slate-300'
+                }`}
+              >
+                <span>✓ {t(uiLang, 'diagRuleAvailable')}</span>
+                <span className="font-mono font-black">-£10.00</span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {/* Right 5 Cols: Schedule + Total Price + WhatsApp Ready */}
+        <div className="lg:col-span-5 space-y-5">
+          {/* Unified Schedule + Price + Create Booking Card */}
+          <section className="bg-[#161F30] border-2 border-amber-500/70 rounded-xl p-4 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <Clock className="w-4 h-4" />
+                {isPt ? '3. HORÁRIO, TEMPO & FECHAMENTO' : '3. SCHEDULE, TIME & TOTAL'}
+              </span>
               <input
                 type="date"
                 value={scheduledDate}
                 onChange={(e) => setScheduledDate(e.target.value)}
-                className="bg-slate-900 border border-emerald-500/60 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-white"
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-white"
               />
             </div>
 
+            {/* Drop-off Time Grid */}
             <div>
-              <label className="text-xs text-slate-300 font-bold block mb-2">
-                ⏰{' '}
-                {isPt
-                  ? 'Que horas o cliente vai deixar o carro?'
-                  : 'Select Customer Drop-Off Time:'}
+              <label className="text-[11px] text-slate-400 font-bold block mb-1.5">
+                {isPt ? 'Horário de Chegada do Cliente:' : 'Customer Drop-Off Slot:'}
               </label>
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                 {DROP_OFF_SLOTS.map((slot) => {
@@ -1079,266 +846,180 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                       key={slot}
                       type="button"
                       onClick={() => setDropOffSlot(slot)}
-                      className={`py-2 rounded-lg font-mono text-xs font-black border transition relative ${
+                      className={`py-1.5 rounded-lg font-mono text-xs font-black border transition ${
                         dropOffSlot === slot
-                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow'
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400'
                           : isSlotBusy
                           ? 'bg-amber-950/60 text-amber-300 border-amber-600/60'
                           : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-600'
                       }`}
                     >
                       {slot}
-                      {isSlotBusy && (
-                        <span
-                          title={isPt ? 'Já possui carro agendado neste horário' : 'Slot has booking'}
-                          className="block text-[8px] uppercase text-amber-400 leading-none mt-0.5"
-                        >
-                          Ocupado
-                        </span>
-                      )}
                     </button>
                   );
                 })}
               </div>
             </div>
-          </div>
 
-          {/* Real Mechanic Time vs Safe Customer Promise Time */}
-          <div className="grid grid-cols-3 gap-2.5 bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 text-center">
-            <div>
-              <span className="text-[11px] text-slate-400 block">
-                {isPt ? 'Seu Tempo de Box' : 'Your Bay Time'}
-              </span>
-              <span className="text-lg font-black font-mono text-amber-400">
-                ~{calculation.totalEstimatedMinutes} min
-              </span>
+            {/* Turnaround Summary */}
+            <div className="grid grid-cols-3 gap-2 bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
+              <div>
+                <span className="text-[10px] text-slate-400 block">Tempo Box</span>
+                <span className="text-base font-black font-mono text-amber-400">
+                  ~{calculation.totalEstimatedMinutes}m
+                </span>
+              </div>
+              <div className="border-x border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Prazo Cliente</span>
+                <span className="text-base font-black font-mono text-white">
+                  ~{calculation.customerPromisedMinutes}m
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-emerald-400 font-bold block">Pronto às</span>
+                <span className="text-lg font-black font-mono text-emerald-400">
+                  {calculation.promisedReadyTime}
+                </span>
+              </div>
             </div>
-            <div className="border-x border-slate-800 px-2">
-              <span className="text-[11px] text-slate-400 block">
-                {isPt ? 'Prazo c/ Margem' : 'Promised Window'}
-              </span>
-              <span className="text-lg font-black font-mono text-white">
-                ~{calculation.customerPromisedMinutes} min
-              </span>
-            </div>
-            <div>
-              <span className="text-[11px] text-emerald-400 font-bold block">
-                {isPt ? 'Pronto às' : 'Ready By'}
-              </span>
-              <span className="text-xl font-black font-mono text-emerald-400">
-                {calculation.promisedReadyTime}
-              </span>
-            </div>
-          </div>
 
-          {/* Exact Shopping List of Parts the Customer Needs to Bring */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            {/* Parts Customer Must Bring */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-bold text-amber-400 flex items-center gap-1">
+                  <PackageCheck className="w-3.5 h-3.5" />
+                  {isPt ? 'Peças p/ Cliente Trazer:' : 'Parts Customer Brings:'}
+                </span>
+                <div className="flex gap-2">
+                  <a
+                    href={buildEuroCarPartsUrl(vrm)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline font-bold"
+                  >
+                    EuroCarParts ↗
+                  </a>
+                  <a
+                    href={buildAutodocUkUrl(make, model, engine)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-orange-400 hover:underline font-bold"
+                  >
+                    Autodoc ↗
+                  </a>
+                </div>
+              </div>
+              <ul className="space-y-1 text-xs text-slate-300">
+                {selectedServices.map((s) => (
+                  <li key={s.id}>
+                    • {isPt ? s.partsCustomerShouldBringPt : s.partsCustomerShouldBringEn}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Final Price & Hourly Rate */}
+            <div className="flex items-end justify-between pt-2 border-t border-slate-800">
+              <div>
+                <span className="text-[11px] uppercase font-bold text-slate-400 block">
+                  Seu Ganho / Hora
+                </span>
+                <span className="text-xl font-black font-mono text-emerald-400">
+                  £{calculation.projectedHourlyRateGbp.toFixed(2)}/h
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[11px] uppercase font-bold text-amber-400 block">
+                  Total Mão de Obra
+                </span>
+                <span className="text-3xl font-black font-mono text-white">
+                  £{calculation.labourTotalGbp.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCreateWorkOrder}
+              className="w-full min-h-[48px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl flex items-center justify-center gap-2 shadow-lg transition text-sm"
+            >
+              <Wrench className="w-4 h-4" />
+              Agendar na Oficina ({dropOffSlot} → {calculation.promisedReadyTime})
+            </button>
+
+            {orderCreatedBanner && (
+              <div className="p-2.5 rounded-lg bg-emerald-950 border border-emerald-500 text-emerald-200 text-xs font-bold flex items-center justify-between">
+                <span>✓ Agendado: #{orderCreatedBanner}</span>
+                <button
+                  type="button"
+                  onClick={onNavigateToOrders}
+                  className="underline text-amber-300"
+                >
+                  Ver na Agenda →
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* WhatsApp Message Card */}
+          <section className="bg-[#161F30] border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                <PackageCheck className="w-4 h-4" />
-                {isPt
-                  ? 'Peças que o Cliente Precisa Trazer:'
-                  : 'Parts Customer Needs to Bring:'}
+              <span className="text-xs font-bold uppercase text-amber-400">
+                4. Mensagem Pronta p/ WhatsApp
               </span>
-              <div className="flex gap-1.5">
-                <a
-                  href={buildEuroCarPartsUrl(vrm)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-bold text-blue-400 hover:underline flex items-center gap-0.5"
+              <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-700 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDocLang('PT-BR')}
+                  className={`px-2 py-1 rounded font-bold ${
+                    docLang === 'PT-BR' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+                  }`}
                 >
-                  EuroCarParts <ExternalLink className="w-3 h-3" />
-                </a>
-                <span className="text-slate-600">|</span>
-                <a
-                  href={buildAutodocUkUrl(make, model, engine)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-bold text-orange-400 hover:underline flex items-center gap-0.5"
+                  🇧🇷 PT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDocLang('EN-GB')}
+                  className={`px-2 py-1 rounded font-bold ${
+                    docLang === 'EN-GB' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'
+                  }`}
                 >
-                  Autodoc <ExternalLink className="w-3 h-3" />
-                </a>
+                  🇬🇧 EN
+                </button>
               </div>
             </div>
 
-            <ul className="space-y-1 text-xs text-slate-200">
-              {selectedServices.map((s) => (
-                <li key={s.id} className="flex items-start gap-1.5">
-                  <span className="text-emerald-400 font-bold">✓</span>
-                  <span>
-                    {isPt
-                      ? s.partsCustomerShouldBringPt
-                      : s.partsCustomerShouldBringEn}
-                  </span>
-                </li>
-              ))}
-              {oilSpec && (
-                <li className="flex items-start gap-1.5 text-amber-300 font-mono text-[11px] pt-1 border-t border-slate-800/80">
-                  <span>🛢️</span>
-                  <span>Spec Motor: {oilSpec}</span>
-                </li>
-              )}
-            </ul>
-          </div>
-        </section>
+            <pre className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 whitespace-pre-wrap font-sans leading-relaxed max-h-56 overflow-y-auto">
+              {whatsappMessage}
+            </pre>
 
-        {/* Live Pure Labour Price & Hourly Yield Summary */}
-        <section className="bg-[#161F30] border-2 border-amber-500/60 rounded-xl p-5 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                100% LABOUR-ONLY PROFIT HUD
-              </span>
-              <h3 className="text-xl font-black text-white">
-                {isPt
-                  ? 'Preço Só do Serviço & Seu Ganho/Hora'
-                  : 'Pure Labour Price & Your Hourly Yield'}
-              </h3>
-            </div>
-            <UkPlateBadge vrm={vrm} size="sm" />
-          </div>
-
-          <div className="space-y-2 text-sm border-t border-b border-slate-800 py-3 my-3">
-            <div className="flex justify-between text-slate-300">
-              <span>{isPt ? 'Soma dos Serviços Base' : 'Base Services Labour'}</span>
-              <span className="font-mono">£{calculation.baseServicesGbp.toFixed(2)}</span>
-            </div>
-            {calculation.modifiersTotalGbp > 0 && (
-              <div className="flex justify-between text-red-300">
-                <span>
-                  {isPt ? 'Adicionais de Complexidade / Acesso' : 'Complexity Modifiers'}
-                </span>
-                <span className="font-mono">+£{calculation.modifiersTotalGbp.toFixed(2)}</span>
-              </div>
-            )}
-            {calculation.comboDiscountGbp > 0 && (
-              <div className="flex justify-between text-emerald-400">
-                <span>{isPt ? 'Desconto Combo (2+ Serviços)' : 'Combo Discount (2+ Jobs)'}</span>
-                <span className="font-mono">-£{calculation.comboDiscountGbp.toFixed(2)}</span>
-              </div>
-            )}
-            {calculation.diagnosticDiscountGbp > 0 && (
-              <div className="flex justify-between text-emerald-400">
-                <span>
-                  {isPt ? 'Crédito Diagnóstico c/ Reparo' : 'Diagnostic + Repair Credit'}
-                </span>
-                <span className="font-mono">-£{calculation.diagnosticDiscountGbp.toFixed(2)}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-end justify-between mb-5">
-            <div>
-              <span className="text-xs uppercase font-bold text-slate-400 block">
-                {t(uiLang, 'projectedHourlyRate')}
-              </span>
-              <span className="text-2xl font-black font-mono text-emerald-400">
-                £{calculation.projectedHourlyRateGbp.toFixed(2)}/h
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-xs uppercase font-bold text-amber-400 block">
-                {isPt ? 'Mão de Obra Final (100% Lucro)' : 'Total Labour To Charge'}
-              </span>
-              <span className="text-3xl font-black font-mono text-white">
-                £{calculation.labourTotalGbp.toFixed(2)}
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleCreateWorkOrder}
-            className="w-full min-h-[52px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl flex items-center justify-center gap-2 shadow-lg transition text-base"
-          >
-            <Wrench className="w-5 h-5" />
-            {t(uiLang, 'createWorkOrder')} ({calculation.dropOffSlot} →{' '}
-            {calculation.promisedReadyTime})
-          </button>
-
-          {orderCreatedBanner && (
-            <div className="mt-3 p-3 rounded-lg bg-emerald-950/80 border border-emerald-500 text-emerald-200 text-xs font-bold flex items-center justify-between">
-              <span>
-                ✓ {isPt ? 'Ordem Criada:' : 'Work Order Created:'} #{orderCreatedBanner}
-              </span>
+            <div className="grid grid-cols-2 gap-2.5">
               <button
                 type="button"
-                onClick={onNavigateToOrders}
-                className="underline text-amber-300 hover:text-amber-200"
+                onClick={handleCopyWhatsApp}
+                className="min-h-[44px] bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg flex items-center justify-center gap-1.5 text-xs border border-slate-700"
               >
-                {isPt ? 'Abrir no Cronômetro →' : 'Open Bay Stopwatch →'}
+                {copiedToast ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" /> Copiado!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" /> Copiar Texto
+                  </>
+                )}
               </button>
-            </div>
-          )}
-        </section>
 
-        {/* 1-Click WhatsApp Quote Generator */}
-        <section className="bg-[#161F30] border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-              4. WhatsApp Quote (Preço + Horário + Lista de Peças)
-            </span>
-
-            {/* Independent Document Language Selector */}
-            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
               <button
                 type="button"
-                onClick={() => setDocLang('PT-BR')}
-                className={`px-2.5 py-1 rounded text-xs font-bold transition ${
-                  docLang === 'PT-BR'
-                    ? 'bg-emerald-500 text-slate-950'
-                    : 'text-slate-400 hover:text-white'
-                }`}
+                onClick={handleOpenWhatsApp}
+                className="min-h-[44px] bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black rounded-lg flex items-center justify-center gap-1.5 text-xs shadow"
               >
-                🇧🇷 PT-BR (Brasileiros)
-              </button>
-              <button
-                type="button"
-                onClick={() => setDocLang('EN-GB')}
-                className={`px-2.5 py-1 rounded text-xs font-bold transition ${
-                  docLang === 'EN-GB'
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                🇬🇧 EN-GB (Scots/UK)
+                <Send className="w-4 h-4" /> Enviar no Zap
               </button>
             </div>
-          </div>
-
-          <pre className="w-full bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-200 whitespace-pre-wrap font-sans leading-relaxed max-h-72 overflow-y-auto">
-            {whatsappMessage}
-          </pre>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-            <button
-              type="button"
-              onClick={handleCopyWhatsApp}
-              className="min-h-[48px] bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 text-sm border border-slate-700 transition"
-            >
-              {copiedToast ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  {isPt ? 'Copiado!' : 'Copied!'}
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  {t(uiLang, 'copyWhatsApp')}
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleOpenWhatsApp}
-              className="min-h-[48px] bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black rounded-xl flex items-center justify-center gap-2 text-sm shadow transition"
-            >
-              <Send className="w-4 h-4" />
-              {t(uiLang, 'openWhatsApp')}
-            </button>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
     </div>
   );
