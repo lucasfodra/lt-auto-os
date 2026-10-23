@@ -192,6 +192,11 @@ export interface WorkshopSettings {
   ukPaymentLink: string;
   monthlyProfitTargetGbp: number;
   dvlaApiKey?: string;
+  dvsaClientId?: string;
+  dvsaClientSecret?: string;
+  dvsaApiKey?: string;
+  dvsaTokenUrl?: string;
+  dvsaScopeUrl?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   enableSupabaseSync: boolean;

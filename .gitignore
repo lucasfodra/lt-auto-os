@@ -6,3 +6,5 @@ dist-ssr
 .env.*
 .vercel
 .netlify
+
+.vercel

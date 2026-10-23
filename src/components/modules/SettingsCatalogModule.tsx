@@ -148,17 +148,53 @@ export const SettingsCatalogModule: React.FC = () => {
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-amber-300 font-mono"
               />
             </div>
-            <div className="sm:col-span-2">
-              <label className="text-slate-400 block mb-1">
-                GOV.UK DVLA Vehicle Enquiry API Key (Opcional — Gratuita no portal DVLA UK)
-              </label>
-              <input
-                type="password"
-                placeholder="Insira sua chave da API DVLA UK caso queira consulta governamental online..."
-                value={db.settings.dvlaApiKey || ''}
-                onChange={(e) => updateSettings({ dvlaApiKey: e.target.value })}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono"
-              />
+            <div className="sm:col-span-2 pt-2 border-t border-slate-800">
+              <span className="text-amber-400 font-bold block mb-2">
+                🇬🇧 API Oficial DVSA MOT History (`https://history.mot.api.gov.uk/v1/trade/vehicles/registration/{'{VRN}'}`)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-slate-400 block mb-1">DVSA OAuth2 Token URL (Microsoft Entra ID)</label>
+                  <input
+                    placeholder="https://login.microsoftonline.com/<tenantId>/oauth2/v2.0/token"
+                    value={db.settings.dvsaTokenUrl || ''}
+                    onChange={(e) => updateSettings({ dvsaTokenUrl: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">DVSA API Key (`x-api-key`)</label>
+                  <input
+                    type="password"
+                    placeholder="Chave x-api-key da DVSA..."
+                    value={db.settings.dvsaApiKey || ''}
+                    onChange={(e) => updateSettings({ dvsaApiKey: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">DVSA Client ID</label>
+                  <input
+                    placeholder="Client ID..."
+                    value={db.settings.dvsaClientId || ''}
+                    onChange={(e) => updateSettings({ dvsaClientId: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">DVSA Client Secret</label>
+                  <input
+                    type="password"
+                    placeholder="Client Secret..."
+                    value={db.settings.dvsaClientSecret || ''}
+                    onChange={(e) => updateSettings({ dvsaClientSecret: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-[11px]"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                * Sem credenciais preenchidas, o LT Auto OS usa automaticamente o Simulador Inteligente DVSA UK (decodifica qualquer placa britânica, quilometragem e Advisories de MOT offline).
+              </p>
             </div>
           </div>
         </section>

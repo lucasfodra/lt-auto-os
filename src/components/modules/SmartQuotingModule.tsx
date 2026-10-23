@@ -32,7 +32,12 @@ import {
   UK_VEHICLE_SPECS_DB,
   UkVehicleTechnicalSpec,
 } from '../../data/ukVehicleDatabase';
-import { decodeUkPlateYear, searchUkVehicleDatabase } from '../../services/ukDvlaLookup';
+import {
+  decodeUkPlateYear,
+  DvsaVehicleMotResponse,
+  fetchDvsaVehicleAndMotHistory,
+  searchUkVehicleDatabase,
+} from '../../services/ukDvlaLookup';
 import { ComplexityTier, FuelType, ServiceCategory, VehicleFlags } from '../../types/domain';
 import { t } from '../../i18n/translations';
 
@@ -99,10 +104,12 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
   const [customerName, setCustomerName] = useState('Matheus Oliveira');
   const [customerPhone, setCustomerPhone] = useState('+447700900412');
 
-  // Active Technical Spec from Scottish/UK Database
+  // Active Technical Spec from Scottish/UK Database + DVSA MOT API Report
   const [activeTechSpec, setActiveTechSpec] = useState<UkVehicleTechnicalSpec | null>(
     UK_VEHICLE_SPECS_DB[0]
   );
+  const [dvsaReport, setDvsaReport] = useState<DvsaVehicleMotResponse | null>(null);
+  const [loadingDvsa, setLoadingDvsa] = useState(false);
   const [ukDbSearchQuery, setUkDbSearchQuery] = useState('');
   const [showUkDatabaseDrawer, setShowUkDatabaseDrawer] = useState(false);
 
@@ -182,12 +189,18 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
     setShowUkDatabaseDrawer(false);
   };
 
-  // Lookup VRM in existing LT Auto database OR decode UK plate year automatically
-  const handleLookupVrm = (targetVrm = vrm) => {
+  // Lookup VRM via DVSA MOT History API + Local LT Auto Fleet + Scottish Tech Spec DB
+  const handleLookupVrm = async (targetVrm = vrm) => {
+    setLoadingDvsa(true);
     const normalized = targetVrm.replace(/\s+/g, '').toUpperCase();
     const foundVeh = db.vehicles.find(
       (v) => v.vrm.replace(/\s+/g, '').toUpperCase() === normalized
     );
+
+    const dvsaData = await fetchDvsaVehicleAndMotHistory(targetVrm, db.settings);
+    setDvsaReport(dvsaData);
+    setLoadingDvsa(false);
+
     if (foundVeh) {
       setVrm(foundVeh.vrm);
       setMake(foundVeh.make);
@@ -199,9 +212,11 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
       setMileage(foundVeh.mileage);
       setFlags(foundVeh.flags);
 
-      const matchedSpec = UK_VEHICLE_SPECS_DB.find((s) =>
-        s.make.toLowerCase().includes(foundVeh.make.toLowerCase())
-      );
+      const matchedSpec =
+        dvsaData.matchedTechSpec ||
+        UK_VEHICLE_SPECS_DB.find((s) =>
+          s.make.toLowerCase().includes(foundVeh.make.toLowerCase())
+        );
       if (matchedSpec) setActiveTechSpec(matchedSpec);
 
       const owner = db.customers.find((c) => c.id === foundVeh.customerId);
@@ -216,12 +231,27 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
       );
       const recMods = getRecommendedModifierIds(foundVeh.flags, currentServices);
       setSelectedModifierIds(recMods);
-    } else {
+    } else if (dvsaData.matchedTechSpec) {
+      const spec = dvsaData.matchedTechSpec;
+      setActiveTechSpec(spec);
+      setMake(dvsaData.make);
+      setModel(dvsaData.model);
+      setEngine(spec.engineLabel);
+      setFuelType(dvsaData.fuelType);
+      setOilSpec(`${spec.oilViscosity} ${spec.oilOemSpec} (${spec.oilCapacityLitres}L)`);
+      setFlags(spec.flags);
+
+      const latestOdo = parseInt(dvsaData.motTests?.[0]?.odometerValue || '0', 10);
+      if (latestOdo > 0) setMileage(latestOdo);
+
       const decoded = decodeUkPlateYear(targetVrm);
-      if (decoded.year) {
-        setYear(decoded.year);
-      }
-      setShowUkDatabaseDrawer(true);
+      if (decoded.year) setYear(decoded.year);
+
+      const currentServices = db.serviceCatalog.filter((s) =>
+        selectedServiceIds.includes(s.id)
+      );
+      const recMods = getRecommendedModifierIds(spec.flags, currentServices);
+      setSelectedModifierIds(recMods);
     }
   };
 
@@ -429,11 +459,16 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
             <UkPlateBadge vrm={vrm} size="lg" editable onChange={setVrm} />
             <button
               type="button"
-              onClick={() => handleLookupVrm(vrm)}
+              onClick={() => void handleLookupVrm(vrm)}
+              disabled={loadingDvsa}
               className="min-h-[52px] px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-lg flex items-center justify-center gap-2 shadow transition text-sm"
             >
               <Zap className="w-4 h-4" />
-              {t(uiLang, 'lookupBtn')}
+              {loadingDvsa
+                ? 'Consultando DVSA...'
+                : isPt
+                ? 'Consultar Placa (DVSA MOT)'
+                : 'Lookup VRM (DVSA MOT)'}
             </button>
 
             <button
@@ -447,6 +482,72 @@ export const SmartQuotingModule: React.FC<SmartQuotingModuleProps> = ({
                 : `Scottish / UK Car Specs DB (${UK_VEHICLE_SPECS_DB.length} Models)`}
             </button>
           </div>
+
+          {/* DVSA Trade MOT History API Live Result & 1-Click Quote Advisories Banner */}
+          {dvsaReport && dvsaReport.motTests && dvsaReport.motTests[0] && (
+            <div className="mb-4 bg-emerald-950/30 border-2 border-emerald-500/60 rounded-xl p-4 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono text-[10px] font-black uppercase">
+                    DVSA MOT API
+                  </span>
+                  <span className="text-xs font-extrabold text-white">
+                    {dvsaReport.make} {dvsaReport.model} ({dvsaReport.engineSize}cc •{' '}
+                    {dvsaReport.primaryColour})
+                  </span>
+                </div>
+                <span className="text-xs font-mono text-emerald-300">
+                  MOT Exp: <strong>{dvsaReport.motTests[0].expiryDate || 'N/A'}</strong> • Odo:{' '}
+                  <strong>
+                    {Number(dvsaReport.motTests[0].odometerValue).toLocaleString()}{' '}
+                    {dvsaReport.motTests[0].odometerUnit}
+                  </strong>
+                </span>
+              </div>
+
+              {dvsaReport.motTests[0].defects && dvsaReport.motTests[0].defects.length > 0 && (
+                <div className="space-y-1.5 pt-1 border-t border-emerald-500/30">
+                  <span className="text-[11px] font-bold uppercase text-amber-300 block">
+                    🔍 Advisories / Falhas Registradas no Último MOT da Placa {dvsaReport.registration}:
+                  </span>
+                  {dvsaReport.motTests[0].defects.map((def, idx) => (
+                    <div
+                      key={idx}
+                      className="text-xs bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2"
+                    >
+                      <span className="text-slate-200">
+                        <strong
+                          className={
+                            def.type === 'ADVISORY' ? 'text-amber-400' : 'text-red-400'
+                          }
+                        >
+                          [{def.type}]
+                        </strong>{' '}
+                        {def.text}
+                      </span>
+                    </div>
+                  ))}
+
+                  {dvsaReport.recommendedServiceIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedServiceIds((prev) =>
+                          Array.from(new Set([...prev, ...dvsaReport.recommendedServiceIds]))
+                        );
+                      }}
+                      className="mt-2 w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      {isPt
+                        ? `Orçar Reparo desses Advisories do MOT em 1 Clique (+${dvsaReport.recommendedServiceIds.length} serviços)`
+                        : `Add Recommended MOT Advisory Repairs in 1-Click (+${dvsaReport.recommendedServiceIds.length} jobs)`}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Interactive Scottish / UK Vehicle Technical Database Browser */}
           {showUkDatabaseDrawer && (

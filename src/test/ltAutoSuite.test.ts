@@ -6,7 +6,12 @@ import {
 } from '../services/pricingEngine';
 import { INITIAL_MODIFIERS_CATALOG, INITIAL_SERVICE_CATALOG } from '../data/seedData';
 import { UK_VEHICLE_SPECS_DB } from '../data/ukVehicleDatabase';
-import { decodeUkPlateYear, searchUkVehicleDatabase } from '../services/ukDvlaLookup';
+import {
+  decodeUkPlateYear,
+  fetchDvsaVehicleAndMotHistory,
+  mapMotDefectsToServiceIds,
+  searchUkVehicleDatabase,
+} from '../services/ukDvlaLookup';
 import { generateWhatsAppQuoteText } from '../services/whatsappGenerator';
 import { LTAutoRepository } from '../services/repository';
 
@@ -135,6 +140,28 @@ describe('LT Auto OS — Core Business Logic & Encapsulated Test Suite (Scotland
       const dv66 = decodeUkPlateYear('DV66 UKB');
       expect(dv66.year).toBe(2016);
       expect(dv66.isScottishRegistered).toBe(false);
+    });
+
+    it('maps DVSA MOT History defects/advisories directly to LT Auto labour service IDs', async () => {
+      const mapped = mapMotDefectsToServiceIds([
+        {
+          type: 'ADVISORY',
+          text: 'Nearside Front Anti-roll bar linkage ball joint has slight play (5.3.4)',
+        },
+        {
+          type: 'ADVISORY',
+          text: 'Rear Brake pad(s) wearing thin (1.1.13)',
+        },
+      ]);
+
+      expect(mapped).toContain('srv-drop-links');
+      expect(mapped).toContain('srv-rear-pads-manual');
+
+      const repo = new LTAutoRepository();
+      const state = repo.resetToSeedData();
+      const dvsaRes = await fetchDvsaVehicleAndMotHistory('SH64 WRF', state.settings);
+      expect(dvsaRes.registration).toBe('SH64WRF');
+      expect(dvsaRes.recommendedServiceIds.length).toBeGreaterThan(0);
     });
   });
 
